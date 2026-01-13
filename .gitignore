@@ -1,0 +1,13 @@
+# Visual Studio Files
+*.user
+*.aps
+.vs/
+
+# Build
+bin/
+lib/
+obj/
+
+# Generated Docs
+docs/html/
+docs/latex/
