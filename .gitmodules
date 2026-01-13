@@ -1,0 +1,4 @@
+[submodule "mni"]
+	path = deps/mni
+	url = https://github.com/nullsrv/mni.git
+	branch = v5
