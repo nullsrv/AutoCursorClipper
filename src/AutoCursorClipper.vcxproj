@@ -162,6 +162,7 @@
     <ClCompile Include="main.c" />
   </ItemGroup>
   <ItemGroup>
+    <Image Include="icons\acc4.ico" />
     <Image Include="icons\green2.ico" />
     <Image Include="icons\red2.ico" />
   </ItemGroup>
