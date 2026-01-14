@@ -60,6 +60,7 @@ typedef struct AutoCursorClipper {
     HWND                hwnd;           // window handle to clipped window
     RECT                rect;           // region that is currently clipped
 
+    // Hooks
     HWINEVENTHOOK       foreground_hook;
     HWINEVENTHOOK       move_hook;
     HWINEVENTHOOK       minimize_hook;
@@ -199,6 +200,7 @@ static bool acc_process_cmdline(AutoCursorClipper *acc) {
     LocalFree(args);
 
     if (acc->window == NULL) {
+        log_message("missing <window title> argument");
         return false;
     }
 
@@ -206,6 +208,8 @@ static bool acc_process_cmdline(AutoCursorClipper *acc) {
 }
 
 static AccInitStatus acc_init(AutoCursorClipper *acc) {
+    log_message("initializing clipper");
+
     // Process command line arguments.
     if (!acc_process_cmdline(acc)) {
         return ACC_FAILED_TO_PROCESS_COMMAND_LINE;
@@ -328,16 +332,11 @@ static bool acc_lock(AutoCursorClipper *acc, HWND hwnd) {
             log_message("failed to get rect for the window %p", hwnd);
             return false;
         } else {
-            // NOTE: after we restore window from minimize state, foreground event is fired before
-            //       the minimize end and window rect has negative values.
-            
-            if (IsWindowVisible(hwnd)) 
-                log_message("visible");
-            else
-                log_message("invisible");
-
-            // TODO: check if rect is valid position on multi-monitor setup
-            if (rect.left < 0 || rect.top < 0 || rect.right < 0 || rect.bottom < 0) {
+            // After we restore window from minimize state, foreground event is fired before
+            // the minimize end event and window rect has invalid values.
+            // This check make sure rect has valid values.
+            HMONITOR hmon = MonitorFromRect(&rect, MONITOR_DEFAULTTONULL);
+            if (hmon == NULL) {
                 log_message("invalid rect for window window %p (%d, %d, %d, %d)",
                     hwnd, rect.left, rect.top, rect.right, rect.bottom);
                 return false;
@@ -347,6 +346,7 @@ static bool acc_lock(AutoCursorClipper *acc, HWND hwnd) {
                 log_message("failed to lock cursor");
                 return false;
             }
+
             acc->locked = true;
             acc->hwnd = hwnd;
             acc->rect = rect;
@@ -380,10 +380,10 @@ static bool acc_check_window(AutoCursorClipper *acc, HWND hwnd) {
     GetWindowTextW(hwnd, title, ACC_WINDOW_TITLE_MAX_LENGTH - 1);
     GetClassNameW(hwnd, wndclass, MAX_PATH - 1);
 
+    log_message("checking window %p...", hwnd);
+
     log_message("\ttitle: %ls", title);
     log_message("\twndclass: %ls", wndclass);
-
-    log_message("checking window %p...", hwnd);
 
     if (wcsncmp(title, acc->window, ACC_WINDOW_TITLE_MAX_LENGTH) == 0) {
         if (acc_lock(acc, hwnd)) {
@@ -418,39 +418,37 @@ static void CALLBACK acc_hook_proc(
 
     AutoCursorClipper *acc = &g_ACC;
 
-    // TODO: cursor is not clipped after we minimize and then click on taskbar to restore
-
     switch (event) {
     case EVENT_SYSTEM_FOREGROUND: {
-        log_message("Event: EVENT_SYSTEM_FOREGROUND (hwnd: %p)", hwnd);
+        log_message("event: EVENT_SYSTEM_FOREGROUND (hwnd: %p)", hwnd);
         acc_check_window(acc, hwnd);
         break;
     }
     case EVENT_SYSTEM_MOVESIZESTART:
-        log_message("Event: EVENT_SYSTEM_MOVESIZESTART (hwnd: %p)", hwnd);
+        log_message("event: EVENT_SYSTEM_MOVESIZESTART (hwnd: %p)", hwnd);
         break;
     case EVENT_SYSTEM_MOVESIZEEND:
-        log_message("Event: EVENT_SYSTEM_MOVESIZEEND (hwnd: %p)", hwnd);
+        log_message("event: EVENT_SYSTEM_MOVESIZEEND (hwnd: %p)", hwnd);
         acc_check_window(acc, hwnd); 
         break;
     case EVENT_SYSTEM_MINIMIZESTART:
-        log_message("Event: EVENT_SYSTEM_MINIMIZESTART (hwnd: %p)", hwnd);
+        log_message("event: EVENT_SYSTEM_MINIMIZESTART (hwnd: %p)", hwnd);
         break;
     case EVENT_SYSTEM_MINIMIZEEND:
-        log_message("Event: EVENT_SYSTEM_MINIMIZEEND (hwnd: %p)", hwnd);
+        log_message("event: EVENT_SYSTEM_MINIMIZEEND (hwnd: %p)", hwnd);
         acc_check_window(acc, hwnd); 
         break;
     case EVENT_OBJECT_SHOW:
-        log_message("Event: EVENT_OBJECT_SHOW (hwnd: %p)", hwnd);
+        log_message("event: EVENT_OBJECT_SHOW (hwnd: %p)", hwnd);
         break;
     case EVENT_OBJECT_HIDE:
-        log_message("Event: EVENT_OBJECT_HIDE (hwnd: %p)", hwnd);
+        log_message("event: EVENT_OBJECT_HIDE (hwnd: %p)", hwnd);
         break;
     case EVENT_SYSTEM_SWITCHSTART:
-        log_message("Event: EVENT_SYSTEM_SWITCHSTART (hwnd: %p)", hwnd);
+        log_message("event: EVENT_SYSTEM_SWITCHSTART (hwnd: %p)", hwnd);
         break;
     case EVENT_SYSTEM_SWITCHEND:
-        log_message("Event: EVENT_SYSTEM_SWITCHEND (hwnd: %p)", hwnd);
+        log_message("event: EVENT_SYSTEM_SWITCHEND (hwnd: %p)", hwnd);
         break;
     }
 }
