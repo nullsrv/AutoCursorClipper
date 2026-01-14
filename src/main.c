@@ -42,6 +42,7 @@
 
 #define ACC_VERSION                     "0.1"
 #define ACC_WINDOW_TITLE_MAX_LENGTH     2048
+#define ACC_ALT_TAB_WNDCLASS            "XamlExplorerHostIslandWindow"
 
 // Menu ids.
 #define ACC_MENU_ABOUT                  1001
@@ -54,11 +55,12 @@
 
 typedef struct AutoCursorClipper {
     Mni5                tray;
-    bool                locked;
     wchar_t             *window;        // title of the window to clip
 
-    HWND                hwnd;           // window handle to clipped window
-    RECT                rect;           // region that is currently clipped
+    bool                is_locked;    
+    HWND                locked_hwnd;    // window handle to clipped window
+    RECT                locked_rect;    // region that is currently clipped
+    HWND                last_checked_hwnd;
 
     // Hooks
     HWINEVENTHOOK       foreground_hook;
@@ -82,7 +84,7 @@ typedef enum {
 // Globals
 ////////////////////////////////////////////////////////////////////////////////
 
-static AutoCursorClipper    g_ACC;
+static AutoCursorClipper    g_ACC;                  // need to be global for hook proc
 static bool                 g_enable_log = false;
 
 
@@ -158,7 +160,7 @@ static HICON load_icon_from_res(int id, int dpi) {
 static void acc_refresh_icon_ex(AutoCursorClipper *acc, int dpi, MniThemeInfo mti) {
     UNREFERENCED_PARAMETER(mti);
 
-    int id = acc->locked ? IDI_ICON_GREEN : IDI_ICON_RED;
+    int id = acc->is_locked ? IDI_ICON_GREEN : IDI_ICON_RED;
     HICON ico = load_icon_from_res(id, dpi);
     
     MniError err = MniSetIcon(&acc->tray, ico, MNI_RDP_MANUAL);
@@ -208,12 +210,19 @@ static bool acc_process_cmdline(AutoCursorClipper *acc) {
 }
 
 static AccInitStatus acc_init(AutoCursorClipper *acc) {
-    log_message("initializing clipper");
+    assert(acc != NULL && "invalid argument");
+
+    log_message("initializing auto clipper...");
 
     // Process command line arguments.
     if (!acc_process_cmdline(acc)) {
         return ACC_FAILED_TO_PROCESS_COMMAND_LINE;
     }
+
+    acc->is_locked = false;
+    acc->locked_hwnd = NULL;
+    acc->locked_rect = (RECT){0,0,0,0};
+    acc->last_checked_hwnd = NULL;
 
     // Setup MniInfo.
     MniInfo info;
@@ -281,6 +290,8 @@ static AccInitStatus acc_init(AutoCursorClipper *acc) {
     //    return ACC_FAILED_TO_CREATE_HOOKS;
     //}
 
+    log_message("initialization done");
+
     return ACC_INITIALIZED;
 }
 
@@ -347,9 +358,9 @@ static bool acc_lock(AutoCursorClipper *acc, HWND hwnd) {
                 return false;
             }
 
-            acc->locked = true;
-            acc->hwnd = hwnd;
-            acc->rect = rect;
+            acc->is_locked = true;
+            acc->locked_hwnd = hwnd;
+            acc->locked_rect = rect;
             acc_refresh_icon(acc);
         }
     }
@@ -358,20 +369,28 @@ static bool acc_lock(AutoCursorClipper *acc, HWND hwnd) {
 }
 
 static bool acc_unlock(AutoCursorClipper *acc) {
+    assert(acc != NULL && "invalid argument");
+
     if (!ClipCursor(NULL)) {
         log_message("failed to unlock cursor");
         return false;
     }
 
-    acc->locked = false;
-    acc->hwnd = NULL;
-    acc->rect = (RECT){0,0,0,0};
+    acc->is_locked = false;
+    acc->locked_hwnd = NULL;
+    acc->locked_rect = (RECT){0,0,0,0};
     acc_refresh_icon(acc);
 
     return true;
 }
 
 static bool acc_check_window(AutoCursorClipper *acc, HWND hwnd) {
+    assert(acc != NULL && "invalid argument");
+
+    if (hwnd == NULL || acc->window == NULL) {
+        return false;
+    }
+
     wchar_t title[ACC_WINDOW_TITLE_MAX_LENGTH];
     wchar_t wndclass[MAX_PATH];
     memset(&title, 0, sizeof(title));
@@ -388,15 +407,23 @@ static bool acc_check_window(AutoCursorClipper *acc, HWND hwnd) {
     if (wcsncmp(title, acc->window, ACC_WINDOW_TITLE_MAX_LENGTH) == 0) {
         if (acc_lock(acc, hwnd)) {
             log_message("cursor locked to window %p (%d, %d, %d, %d)",
-                hwnd, acc->rect.left, acc->rect.top, acc->rect.right, acc->rect.bottom);
+                hwnd,
+                acc->locked_rect.left, acc->locked_rect.top,
+                acc->locked_rect.right, acc->locked_rect.bottom);
         }
     } else {
-        if (wcscmp(wndclass, L"XamlExplorerHostIslandWindow") != 0) {
-            if (acc_unlock(acc)) {
-                log_message("cursor unlocked");
+        // When doing Alt+Tab to restore the window, the Alt-Tab window is getting to foreground
+        // right after the target windows is clipped. This check is here to prevent the steal.
+        if (acc->last_checked_hwnd == acc->locked_hwnd) {
+            if (wcscmp(wndclass, TEXT(ACC_ALT_TAB_WNDCLASS)) != 0) {
+                if (acc_unlock(acc)) {
+                    log_message("cursor unlocked");
+                }
             }
         }
     }
+
+    acc->last_checked_hwnd = hwnd;
 
     return true;
 }
