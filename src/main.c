@@ -86,7 +86,6 @@ typedef enum {
 
 static AutoCursorClipper    g_ACC;                  // need to be global for hook proc
 static bool                 g_enable_log = false;
-static HWND                 g_about_dlg = NULL;
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -298,26 +297,7 @@ static AccInitStatus acc_init(AutoCursorClipper *acc) {
 static int acc_run(AutoCursorClipper *acc) {
     UNREFERENCED_PARAMETER(acc);
 
-    MSG msg;
-
-    while (1) {
-        BOOL ret = GetMessage(&msg, NULL, 0, 0);
-        if (ret == -1) {
-            return -1;
-        }
-
-        if (ret == FALSE) {
-            break;
-        }
-
-        if (!IsDialogMessageW(g_about_dlg, &msg))
-        {
-            TranslateMessage(&msg);
-            DispatchMessageW(&msg);
-        }
-    }
-
-    return (int)(msg.wParam);
+    return MniRunMessageLoop();
 }
 
 static void acc_free(AutoCursorClipper *acc) {
@@ -626,20 +606,22 @@ static INT_PTR CALLBACK about_dlg_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
     case WM_INITDIALOG: {
         AutoCursorClipper *acc = (AutoCursorClipper *)lParam;
 
-        HWND hico = GetDlgItem(hwnd, IDC_ABOUT_PROGRAM_ICON);
-        RECT r2;
-        GetClientRect(hico, &r2);
+        {
+            HWND hpi = GetDlgItem(hwnd, IDC_ABOUT_PROGRAM_ICON);
+            RECT rc;
+            GetClientRect(hpi, &rc);
 
-        POINT px1 = {r2.left, r2.top};
-        POINT px2 = {r2.right, r2.bottom};
-        MapWindowPoints(hico, GetParent(hico), &px1, 1);
-        MapWindowPoints(hico, GetParent(hico), &px2, 1);
+            POINT px1 = {rc.left, rc.top};
+            POINT px2 = {rc.right, rc.bottom};
+            MapWindowPoints(hpi, GetParent(hpi), &px1, 1);
+            MapWindowPoints(hpi, GetParent(hpi), &px2, 1);
 
-        int x0 = MulDiv(px1.x, acc->tray.dpi, 96);
-        int y0 = MulDiv(px1.y, acc->tray.dpi, 96);
-        int x1 = MulDiv(px2.x, acc->tray.dpi, 96);
-        int y1 = MulDiv(px2.y, acc->tray.dpi, 96);
-        SetWindowPos(hico, 0, x0, y0, x1, y1, SWP_NONE);
+            int x0 = MulDiv(px1.x, acc->tray.dpi, 96);
+            int y0 = MulDiv(px1.y, acc->tray.dpi, 96);
+            int x1 = MulDiv(px2.x, acc->tray.dpi, 96);
+            int y1 = MulDiv(px2.y, acc->tray.dpi, 96);
+            SetWindowPos(hpi, 0, x0, y0, x1, y1, SWP_NONE);
+        }
 
         HICON ico = load_icon_from_res(IDI_ICON_ACC, 48, 48, acc->tray.dpi);
         SendDlgItemMessageW(hwnd, IDC_ABOUT_PROGRAM_ICON, STM_SETIMAGE, IMAGE_ICON, (LPARAM)ico);
