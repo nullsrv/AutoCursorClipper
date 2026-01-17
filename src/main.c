@@ -25,6 +25,8 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
+#include <commctrl.h>
+#include <shellapi.h>
 
 #define MNI_IMPLEMENTATION
 #include <mni/mni.h>
@@ -40,13 +42,11 @@
 // Constants
 ////////////////////////////////////////////////////////////////////////////////
 
-#define ACC_VERSION                     "0.1"
+#define ACC_PROGRAM_NAME_STRING         TEXT("Auto Cursor Clipper v0.1")
+#define ACC_HOMEPAGE                    TEXT("https://github.com/nullsrv/AutoCursorClipper")
+#define ACC_COPYRIGHT                   TEXT("Copyright (C) 2026  nullsrv")
 #define ACC_WINDOW_TITLE_MAX_LENGTH     2048
-#define ACC_ALT_TAB_WNDCLASS            "XamlExplorerHostIslandWindow"
-
-// Menu ids.
-#define ACC_MENU_ABOUT                  1001
-#define ACC_MENU_EXIT                   1002
+#define ACC_ALT_TAB_WNDCLASS            TEXT("XamlExplorerHostIslandWindow")
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -86,6 +86,7 @@ typedef enum {
 
 static AutoCursorClipper    g_ACC;                  // need to be global for hook proc
 static bool                 g_enable_log = false;
+static HWND                 g_about_dlg = NULL;
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -98,7 +99,7 @@ static void on_dpi_change(Mni5 *mni, int dpi);
 static void on_system_theme_change(Mni5 *mni, MniThemeInfo mti);
 
 static void CALLBACK acc_hook_proc(HWINEVENTHOOK, DWORD, HWND, LONG, LONG, DWORD, DWORD);
-
+static INT_PTR CALLBACK about_dlg_proc(HWND, UINT, WPARAM, LPARAM);
 
 ////////////////////////////////////////////////////////////////////////////////
 // Helpers
@@ -144,10 +145,11 @@ static bool is_color_light(DWORD color) {
     return (((5 * g) + (2 * r) + b) > (8 * 128));
 }
  
-static HICON load_icon_from_res(int id, int dpi) {
-    int wh = MulDiv(16, dpi, 96);
+static HICON load_icon_from_res(int id, int width, int height, int dpi) {
+    int w = MulDiv(width, dpi, 96);
+    int h = MulDiv(height, dpi, 96);
     HICON ico = (HICON)LoadImageW(
-        GetModuleHandle(NULL), MAKEINTRESOURCE(id), IMAGE_ICON, wh,wh, LR_DEFAULTCOLOR | LR_SHARED);
+        GetModuleHandle(NULL), MAKEINTRESOURCE(id), IMAGE_ICON, w, h, LR_DEFAULTCOLOR | LR_SHARED);
 
     return ico;
 }
@@ -161,7 +163,7 @@ static void acc_refresh_icon_ex(AutoCursorClipper *acc, int dpi, MniThemeInfo mt
     UNREFERENCED_PARAMETER(mti);
 
     int id = acc->is_locked ? IDI_ICON_GREEN : IDI_ICON_RED;
-    HICON ico = load_icon_from_res(id, dpi);
+    HICON ico = load_icon_from_res(id, 16, 16, dpi);
     
     MniError err = MniSetIcon(&acc->tray, ico, MNI_RDP_MANUAL);
     if (MNI_FAILED(err)) {
@@ -231,10 +233,10 @@ static AccInitStatus acc_init(AutoCursorClipper *acc) {
     HMENU menu_main = CreateMenu();
     HMENU menu_popup = CreateMenu();
 
-    AppendMenuW(menu_main, MF_STRING | MF_DISABLED, 0, L"AutoCursorClipper v" ACC_VERSION);
+    AppendMenuW(menu_main, MF_STRING | MF_DISABLED, 0, ACC_PROGRAM_NAME_STRING);
     AppendMenuW(menu_main, MF_SEPARATOR, 0, NULL);
-    AppendMenuW(menu_main, MF_STRING, ACC_MENU_ABOUT, L"About");
-    AppendMenuW(menu_main, MF_STRING, ACC_MENU_EXIT, L"Exit");
+    AppendMenuW(menu_main, MF_STRING, IDM_MENU_ABOUT, L"About");
+    AppendMenuW(menu_main, MF_STRING, IDM_MENU_EXIT, L"Exit");
     AppendMenuW(menu_popup, MF_POPUP, (UINT_PTR)menu_main, L"");
 
     info.menu                       = menu_popup;
@@ -297,7 +299,27 @@ static AccInitStatus acc_init(AutoCursorClipper *acc) {
 
 static int acc_run(AutoCursorClipper *acc) {
     UNREFERENCED_PARAMETER(acc);
-    return MniRunMessageLoop();
+
+    MSG msg;
+
+    while (1) {
+        BOOL ret = GetMessage(&msg, NULL, 0, 0);
+        if (ret == -1) {
+            return -1;
+        }
+
+        if (ret == FALSE) {
+            break;
+        }
+
+        if (!IsDialogMessageW(g_about_dlg, &msg))
+        {
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+    }
+
+    return (int)(msg.wParam);
 }
 
 static void acc_free(AutoCursorClipper *acc) {
@@ -415,7 +437,7 @@ static bool acc_check_window(AutoCursorClipper *acc, HWND hwnd) {
         // When doing Alt+Tab to restore the window, the Alt-Tab window is getting to foreground
         // right after the target windows is clipped. This check is here to prevent the steal.
         if (acc->last_checked_hwnd == acc->locked_hwnd) {
-            if (wcscmp(wndclass, TEXT(ACC_ALT_TAB_WNDCLASS)) != 0) {
+            if (wcscmp(wndclass, ACC_ALT_TAB_WNDCLASS) != 0) {
                 if (acc_unlock(acc)) {
                     log_message("cursor unlocked");
                 }
@@ -488,11 +510,17 @@ static void on_context_menu(Mni5 *mni, int id) {
     AutoCursorClipper *acc = mni->user_data1;
     assert(acc != NULL);
 
+    static bool is_about_dialog = false;
+
     switch (id) {
-    case ACC_MENU_ABOUT:
-        // TODO: show about dialog
+    case IDM_MENU_ABOUT:
+        if (!is_about_dialog) {
+            is_about_dialog = true;
+            DialogBoxParamW(0, MAKEINTRESOURCE(IDD_DIALOG_ABOUT), mni->window_handle, about_dlg_proc, (LPARAM)acc);
+            is_about_dialog = false;
+        }
         break;
-    case ACC_MENU_EXIT:
+    case IDM_MENU_EXIT:
         MniQuit();
         break;
     }
@@ -562,6 +590,14 @@ int WINAPI wWinMain(
     UNREFERENCED_PARAMETER(lpCmdLine);
     UNREFERENCED_PARAMETER(nShowCmd);
 
+    INITCOMMONCONTROLSEX ccs = {0};
+    ccs.dwSize = sizeof(ccs);
+    ccs.dwICC  = ICC_STANDARD_CLASSES | ICC_LINK_CLASS;
+    if (!InitCommonControlsEx(&ccs)) {
+        log_message("InitCommonControlsEx() failed");
+        return -255;
+    }
+
 #ifdef _DEBUG
     g_enable_log = true;
 #endif
@@ -584,4 +620,61 @@ cleanup:
     acc_free(acc);
 
     return ret_code;
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+// About Dialog
+////////////////////////////////////////////////////////////////////////////////
+
+static INT_PTR CALLBACK about_dlg_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    switch (msg) {
+    case WM_INITDIALOG: {
+        AutoCursorClipper *acc = (AutoCursorClipper *)lParam;
+
+        HWND hico = GetDlgItem(hwnd, IDC_ABOUT_PROGRAM_ICON);
+        RECT r2;
+        GetClientRect(hico, &r2);
+
+        POINT px1 = {r2.left, r2.top};
+        POINT px2 = {r2.right, r2.bottom};
+        MapWindowPoints(hico, GetParent(hico), &px1, 1);
+        MapWindowPoints(hico, GetParent(hico), &px2, 1);
+
+        int x0 = MulDiv(px1.x, acc->tray.dpi, 96);
+        int y0 = MulDiv(px1.y, acc->tray.dpi, 96);
+        int x1 = MulDiv(px2.x, acc->tray.dpi, 96);
+        int y1 = MulDiv(px2.y, acc->tray.dpi, 96);
+        SetWindowPos(hico, 0, x0, y0, x1, y1, SWP_NONE);
+
+        HICON ico = load_icon_from_res(IDI_ICON_ACC, 48, 48, acc->tray.dpi);
+        SendDlgItemMessageW(hwnd, IDC_ABOUT_PROGRAM_ICON, STM_SETIMAGE, IMAGE_ICON, (LPARAM)ico);
+        SetDlgItemTextW(hwnd, IDC_ABOUT_PROGRAM_NAME, ACC_PROGRAM_NAME_STRING);
+        SetDlgItemTextW(hwnd, IDC_ABOUT_COPYRIGHT, ACC_COPYRIGHT);
+        SetDlgItemTextW(hwnd, IDC_ABOUT_HOMEPAGE, L"<a href=\"" ACC_HOMEPAGE "\">" ACC_HOMEPAGE "</a>");
+        return TRUE;
+    }
+
+    case WM_COMMAND:
+        EndDialog(hwnd, IDOK);
+        break;
+
+    case WM_NOTIFY:
+        switch (((LPNMHDR)lParam)->code)
+        {
+        case NM_CLICK:
+        case NM_RETURN: {
+            PNMLINK link = (PNMLINK)lParam;
+            LITEM item = link->item;
+            ShellExecuteW(NULL, L"open", item.szUrl, NULL, NULL, SW_SHOW);
+            EndDialog(hwnd, IDOK);
+            break;
+        }
+        }
+
+    default:
+        return FALSE;
+    }
+
+    return TRUE;
 }
