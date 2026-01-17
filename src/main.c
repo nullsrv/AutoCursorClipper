@@ -94,7 +94,6 @@ static HWND                 g_about_dlg = NULL;
 ////////////////////////////////////////////////////////////////////////////////
 
 static void on_context_menu(Mni5 *mni, int id);
-static void on_taskbar_created(Mni5 *mni);
 static void on_dpi_change(Mni5 *mni, int dpi);
 static void on_system_theme_change(Mni5 *mni, MniThemeInfo mti);
 
@@ -243,7 +242,6 @@ static AccInitStatus acc_init(AutoCursorClipper *acc) {
     info.menu_rdp                   = MNI_RDP_AUTO;
     info.tip                        = L"Auto Cursor Clipper";
     info.user_data1                 = acc;
-    info.on_taskbar_created         = on_taskbar_created;
     info.on_dpi_change              = on_dpi_change;
     info.on_system_theme_change     = on_system_theme_change;
     info.on_context_menu_item_click = on_context_menu;
@@ -257,7 +255,7 @@ static AccInitStatus acc_init(AutoCursorClipper *acc) {
     acc_refresh_icon(acc);
 
     // Show the icon in Notification Area.
-    if (MNI_FAILED(MniShow(&acc->tray, MNI_FALSE))) {
+    if (MNI_FAILED(MniShow(&acc->tray))) {
         log_message("failed to show tray icon");
         return ACC_FAILED_TO_SHOW_TRAY_ICON;
     }
@@ -524,10 +522,6 @@ static void on_context_menu(Mni5 *mni, int id) {
         MniQuit();
         break;
     }
-}
-
-static void on_taskbar_created(Mni5 *mni) {
-    MniShow(mni, MNI_TRUE);
 }
 
 static void on_dpi_change(Mni5 *mni, int dpi) {
