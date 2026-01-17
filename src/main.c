@@ -42,7 +42,7 @@
 // Constants
 ////////////////////////////////////////////////////////////////////////////////
 
-#define ACC_PROGRAM_NAME_STRING         TEXT("Auto Cursor Clipper v0.1")
+#define ACC_PROGRAM_NAME_STRING         TEXT("Auto Cursor Clipper v1.0")
 #define ACC_HOMEPAGE                    TEXT("https://github.com/nullsrv/AutoCursorClipper")
 #define ACC_COPYRIGHT                   TEXT("Copyright (C) 2026  nullsrv")
 #define ACC_WINDOW_TITLE_MAX_LENGTH     2048
