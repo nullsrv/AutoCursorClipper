@@ -3,5 +3,5 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
-  <Project Path="src/AutoCursorClipper.vcxproj" Id="e1bc27c7-92c6-4262-a9ab-76c066eaf165" />
+  <Project Path="src/acc.vcxproj" Id="e1bc27c7-92c6-4262-a9ab-76c066eaf165" />
 </Solution>

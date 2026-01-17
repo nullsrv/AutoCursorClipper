@@ -25,4 +25,7 @@
   <ItemGroup>
     <ResourceCompile Include="resource.rc" />
   </ItemGroup>
+  <ItemGroup>
+    <Manifest Include="acc.manifest" />
+  </ItemGroup>
 </Project>
